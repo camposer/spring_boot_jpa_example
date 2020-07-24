@@ -2,10 +2,15 @@ package com.example.demo;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.query.Param;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,20 +30,28 @@ public class DemoApplication {
 
 @RestController
 class TheController {
-	private PetService service;
+	private final PetService petService;
+	private final OwnerService ownerService;
 
-	public TheController(PetService service) {
-		this.service = service;
+	public TheController(PetService petService, OwnerService ownerService) {
+		this.petService = petService;
+		this.ownerService = ownerService;
 	}
 
 	@RequestMapping(value = "/pets", method = RequestMethod.GET)
 	public List<Pet> getPets() {
-		return service.getPets();
+		return petService.getPets();
 	}
 
 	@RequestMapping(value = "/init", method = RequestMethod.GET)
 	public ResponseEntity init() {
-		service.insertSomePets();
+		petService.insertSomePets();
+		return ResponseEntity.ok().build();
+	}
+
+	@RequestMapping(value = "/owners/{id}", method = RequestMethod.DELETE)
+	public ResponseEntity delete(@PathVariable("id") Long id) {
+		ownerService.delete(id);
 		return ResponseEntity.ok().build();
 	}
 }
@@ -51,6 +64,7 @@ class PetService {
 		this.repo = repo;
 	}
 
+	@Transactional(isolation = Isolation.READ_UNCOMMITTED)
 	public List<Pet> getPets() {
 		List<Pet> pets = new ArrayList<>();
 		repo.findAll().forEach(pets::add);
@@ -63,7 +77,30 @@ class PetService {
 	}
 }
 
+@Service
+@Transactional
+class OwnerService {
+	private final PetRepository petRepository;
+	private final OwnerRepository ownerRepository;
+
+	public OwnerService(PetRepository petRepository, OwnerRepository ownerRepository) {
+		this.petRepository = petRepository;
+		this.ownerRepository = ownerRepository;
+	}
+
+	public void delete(Long id) {
+		petRepository.deleteAllByOwnerId(id);
+		ownerRepository.deleteById(id);
+	}
+}
+
+interface OwnerRepository extends CrudRepository<Owner, Long> {
+}
+
 interface PetRepository extends CrudRepository<Pet, Long>, PetRepositoryCustom {
+	@Query("delete from Pet p where p.owner.id = :ownerId")
+	@Modifying
+	void deleteAllByOwnerId(@Param("ownerId") Long ownerId);
 }
 
 interface PetRepositoryCustom {
@@ -76,10 +113,12 @@ class PetRepositoryCustomImpl implements PetRepositoryCustom {
 
 	@Override
 	public void insertSomePets() {
-		Owner reddy = entityManager.merge(new Owner("reddy"));
-		entityManager.persist(new Pet("tina", reddy));
-		Owner mathan = entityManager.merge(new Owner("mathan"));
-		entityManager.persist(new Pet("nemo", mathan));
+		entityManager.persist(new Owner(1L,"reddy"));
+		entityManager.persist(new Pet("tina", entityManager.find(Owner.class, 1L)));
+//		entityManager.persist(new Owner(1L, "mathan")); // it should fail (because the pk is duplicated)!!
+//		entityManager.persist(new Pet("nemo", entityManager.find(Owner.class, 1L)));
+		entityManager.persist(new Owner(2L, "mathan"));
+		entityManager.persist(new Pet("nemo", entityManager.find(Owner.class, 2L)));
 	}
 }
 
@@ -133,7 +172,6 @@ class Pet {
 @Entity
 class Owner {
 	@Id
-	@GeneratedValue
 	private Long id;
 	private String name;
 
@@ -143,6 +181,11 @@ class Owner {
 	public Owner(String name) {
 		this.name = name;
 	}
+
+    public Owner(Long id, String name) {
+        this.name = name;
+        this.id = id;
+    }
 
 	public Owner() {
 	}
