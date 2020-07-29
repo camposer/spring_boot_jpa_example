@@ -1,12 +1,17 @@
 package com.example.demo;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.persistence.*;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @SpringBootApplication
@@ -26,10 +32,17 @@ public class DemoApplication {
 		SpringApplication.run(DemoApplication.class, args);
 	}
 
+	@Configuration
+	@EnableAsync
+	static class Config {
+
+	}
 }
 
 @RestController
 class TheController {
+	public static Logger logger = LoggerFactory.getLogger(TheController.class);
+
 	private final PetService petService;
 	private final OwnerService ownerService;
 
@@ -45,7 +58,9 @@ class TheController {
 
 	@RequestMapping(value = "/init", method = RequestMethod.GET)
 	public ResponseEntity init() {
+		logger.info("Starting init = {}", new Date().getTime());
 		petService.insertSomePets();
+		logger.info("Ending init = {}", new Date().getTime());
 		return ResponseEntity.ok().build();
 	}
 
@@ -58,6 +73,8 @@ class TheController {
 
 @Service
 class PetService {
+	public static Logger logger = LoggerFactory.getLogger(PetService.class);
+
 	private PetRepository repo;
 
 	public PetService(PetRepository repo) {
@@ -72,8 +89,11 @@ class PetService {
 	}
 
 	@Transactional
+	@Async
 	public void insertSomePets() {
+		logger.info("Starting insertSomePets = {}", new Date().getTime());
 		repo.insertSomePets();
+		logger.info("Ending insertSomePets = {}", new Date().getTime());
 	}
 }
 
